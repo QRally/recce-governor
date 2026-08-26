@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Service Park & Recce Speed Governor v1.4</title>
+<style>
+  :root {
+    --bg-dark: #0f1115;
+    --card-bg: #181b20;
+    --border-color: #2a2e37;
+    --text-main: #ffffff;
+    --red-led: #ff2a2a;
+    --red-glow: rgba(255, 42, 42, 0.4);
+    --green-btn: #1b8a4c;
+    --red-btn: #d32f2f;
+    --blue-btn: #0277bd;
+    --hq-banner-bg: #1c2333;
+    --hq-banner-border: #3d5afe;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  body {
+    background-color: var(--bg-dark);
+    color: var(--text-main);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+    overflow: hidden;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.5px;
+  }
+
+  .car-id { color: #ff9800; }
+  .live-status { color: #00e676; display: flex; align-items: center; gap: 4px; }
+  .battery { color: #cccccc; }
+
+  /* Main Dashboard Layout */
+  .dashboard {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 5px;
+  }
+
+  /* Top telemetry row */
+  .telemetry-row {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 10px;
+    flex: 1;
+  }
+
+  /* Speedometer Section */
+  .speed-card {
+    background: var(--card-bg);
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    transition: background-color 0.3s, border-color 0.3s;
+  }
+
+  .speed-card.speed-breach {
+    background: #3b0000;
+    border-color: #ff1744;
+    animation: flash-red 0.8s infinite alternate;
+  }
+
+  @keyframes flash-red {
+    from { border-color: #ff1744; box-shadow: 0 0 10px #ff1744; }
+    to { border-color: #7f0000; box-shadow: none; }
+  }
+
+  .speed-limit-badge {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 4px solid #ff1744;
+    background: #ffffff;
+    color: #000000;
+    font-weight: 900;
+    font-size: 18px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 5px;
+  }
+
+  .speed-val {
+    font-size: 54px;
+    font-weight: 900;
+    line-height: 1;
+  }
+
+  .speed-unit {
+    font-size: 14px;
+    font-weight: 700;
+    color: #888888;
+    margin-top: 4px;
+  }
+
+  /* Test Controls for Speed */
+  .speed-sim-controls {
+    display: flex;
+    gap: 4px;
+    margin-top: 8px;
+  }
+
+  .sim-btn {
+    background: #2a2e37;
+    border: 1px solid #444;
+    color: #fff;
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+
+  /* Trips Combined Section */
+  .trips-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .trip-box {
+    background: #0a0c0e;
+    border: 1px solid #1f242d;
+    border-radius: 8px;
+    padding: 8px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* LED Display Recessed Box with Glare */
+  .led-display-window {
+    width: 100%;
+    background: #121418;
+    border: 1px solid #252a34;
+    border-radius: 6px;
+    padding: 6px 0;
+    margin: 4px 0;
+    position: relative;
+    box-shadow: inset 0 2px 5px rgba(0,0,0,0.8);
+    overflow: hidden;
+  }
+
+  /* Realistic Glass Glare Overlay */
+  .led-display-window::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 50%;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 100%);
+    pointer-events: none;
+  }
+
+  .trip-label {
+    font-size: 10px;
+    color: #888888;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+  }
+
+  .trip-val-red {
+    font-size: 34px;
+    font-weight: 900;
+    color: var(--red-led);
+    text-shadow: 0 0 8px var(--red-glow), 0 0 15px rgba(255, 42, 42, 0.2);
+    font-family: 'Courier New', Courier, monospace;
+    letter-spacing: 1px;
+    line-height: 1;
+  }
+
+  .trip-btn {
+    background: #2a2e37;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    width: 100%;
+  }
+
+  .trip-btn:active { background: #444855; }
+
+  /* Full-Width HQ Message Banner */
+  .hq-banner {
+    background: var(--hq-banner-bg);
+    border: 1px solid var(--hq-banner-border);
+    border-radius: 10px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .hq-tag {
+    background: var(--hq-banner-border);
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 900;
+    padding: 4px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+  }
+
+  .hq-text {
+    font-size: 13px;
+    font-weight: 700;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Base Action Buttons */
+  .action-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    height: 110px;
+  }
+
+  .btn {
+    border: none;
+    border-radius: 12px;
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: 800;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+
+  .btn-ok { background: var(--green-btn); }
+  .btn-fire { background: var(--red-btn); }
+  .btn-medical { background: var(--blue-btn); }
+
+  .btn:active { opacity: 0.8; transform: scale(0.98); }
+
+  /* Footer Status */
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 5px 0 5px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .status-flag { color: #00e676; }
+  .status-sent { color: #888888; }
+  .status-sent span { color: #ffffff; }
+</style>
+</head>
+<body>
+
+  <!-- Top Status Bar -->
+  <div class="header">
+    <div class="car-id">CAR #15</div>
+    <div class="clock" id="clock">--:--:--</div>
+    <div class="live-status">● LIVE</div>
+    <div class="battery">66% ⚡</div>
+  </div>
+
+  <!-- Main Dashboard -->
+  <div class="dashboard">
+    <!-- Telemetry Row -->
+    <div class="telemetry-row">
+      <!-- Speedometer -->
+      <div class="speed-card" id="speed-card">
+        <div class="speed-limit-badge" id="speed-limit">30</div>
+        <div class="speed-val" id="speed">0.0</div>
+        <div class="speed-unit">MPH</div>
+        <!-- Mock Simulator Buttons -->
+        <div class="speed-sim-controls">
+          <button class="sim-btn" onclick="adjustSpeed(-5)">-5</button>
+          <button class="sim-btn" onclick="setSpeed(0)">0</button>
+          <button class="sim-btn" onclick="adjustSpeed(5)">+5</button>
+          <button class="sim-btn" onclick="setSpeed(34)">34 (Breach)</button>
+        </div>
+      </div>
+
+      <!-- Grouped Trips with Red LED Glare -->
+      <div class="trips-card">
+        <div class="trip-box">
+          <div class="trip-label">STAGE TRIP</div>
+          <div class="led-display-window">
+            <div class="trip-val-red" id="stage-trip">0.00</div>
+          </div>
+          <button class="trip-btn" onclick="resetStageTrip()">RESET (TAP)</button>
+        </div>
+        <div class="trip-box">
+          <div class="trip-label">TOTAL TRIP</div>
+          <div class="led-display-window">
+            <div class="trip-val-red" id="total-trip">0.06</div>
+          </div>
+          <button class="trip-btn" onclick="resetTotalTrip()">HOLD RESET</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- HQ Message Banner -->
+    <div class="hq-banner">
+      <div class="hq-tag">HQ MSG</div>
+      <div class="hq-text" id="hq-msg">RECCE MODE ACTIVE - MAX 30 MPH</div>
+    </div>
+
+    <!-- Base Action Buttons -->
+    <div class="action-buttons">
+      <button class="btn btn-ok" onclick="sendStatus('OK')">✓ OK</button>
+      <button class="btn btn-fire" onclick="sendStatus('FIRE')">🔥 FIRE</button>
+      <button class="btn btn-medical" onclick="sendStatus('MEDICAL')">+ MEDICAL</button>
+    </div>
+  </div>
+
+  <!-- Bottom Bar -->
+  <div class="footer">
+    <div class="status-flag">MOCK SYNC: <span id="sync-status" style="color:#00e5ff;">ACTIVE</span></div>
+    <div class="status-sent">Logs: <span id="log-count">0</span> | Last: <span id="last-sent">OK</span></div>
+  </div>
+
+<script>
+  let currentSpeed = 0.0;
+  const speedLimit = 30.0;
+  const carId = 15;
+
+  // Live Clock
+  function updateClock() {
+    const now = new Date();
+    document.getElementById('clock').innerText = now.toTimeString().split(' ')[0];
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // Speed Simulator & Breach Warning
+  function setSpeed(val) {
+    currentSpeed = Math.max(0, val);
+    updateSpeedUI();
+  }
+
+  function adjustSpeed(delta) {
+    currentSpeed = Math.max(0, currentSpeed + delta);
+    updateSpeedUI();
+  }
+
+  function updateSpeedUI() {
+    document.getElementById('speed').innerText = currentSpeed.toFixed(1);
+    const speedCard = document.getElementById('speed-card');
+    
+    if (currentSpeed > speedLimit) {
+      speedCard.classList.add('speed-breach');
+    } else {
+      speedCard.classList.remove('speed-breach');
+    }
+  }
+
+  // Mock Backend API Handler
+  const MockBackend = {
+    dbKey: 'recce_telemetry_logs',
+
+    init() {
+      if (!localStorage.getItem(this.dbKey)) {
+        localStorage.setItem(this.dbKey, JSON.stringify([]));
+      }
+      this.updateLogCounter();
+    },
+
+    pushLog(payload) {
+      const logs = JSON.parse(localStorage.getItem(this.dbKey)) || [];
+      logs.push(payload);
+      localStorage.setItem(this.dbKey, JSON.stringify(logs));
+      
+      console.log("[MOCK CLOUD DB] Packet Received:", payload);
+      this.updateLogCounter();
+    },
+
+    updateLogCounter() {
+      const logs = JSON.parse(localStorage.getItem(this.dbKey)) || [];
+      document.getElementById('log-count').innerText = logs.length;
+    }
+  };
+
+  MockBackend.init();
+
+  // Automatic Periodic Sync (Every 3 seconds)
+  setInterval(() => {
+    const payload = {
+      car_id: carId,
+      timestamp: new Date().toISOString(),
+      speed_mph: currentSpeed,
+      speed_limit_mph: speedLimit,
+      speeding_breach: currentSpeed > speedLimit,
+      latitude: 52.4145,
+      longitude: -4.0812
+    };
+
+    MockBackend.pushLog(payload);
+  }, 3000);
+
+  // Status Buttons
+  function sendStatus(type) {
+    const statusText = document.getElementById('last-sent');
+    statusText.innerText = type;
+
+    MockBackend.pushLog({
+      car_id: carId,
+      timestamp: new Date().toISOString(),
+      event_type: 'STATUS_ALERT',
+      status_value: type
+    });
+  }
+
+  function resetStageTrip() { document.getElementById('stage-trip').innerText = '0.00'; }
+  function resetTotalTrip() { document.getElementById('total-trip').innerText = '0.00'; }
+</script>
+</body>
+</html>
