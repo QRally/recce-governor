@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Service Park & Recce Speed Governor v1.5</title>
+<title>Service Park & Recce Speed Governor v1.6</title>
 <style>
   :root {
     --bg-dark: #0f1115;
@@ -17,6 +17,7 @@
     --blue-btn: #0277bd;
     --hq-banner-bg: #1c2333;
     --hq-banner-border: #3d5afe;
+    --orange-accent: #ff9800;
   }
 
   * {
@@ -31,7 +32,7 @@
     background-color: var(--bg-dark);
     color: var(--text-main);
     height: 100vh;
-    height: 100dvh; /* Adapts dynamically to dynamic browser address bar */
+    height: 100dvh;
     display: flex;
     flex-direction: column;
     padding: 6px;
@@ -50,7 +51,33 @@
     flex-shrink: 0;
   }
 
-  .car-id { color: #ff9800; }
+  /* Interactive Car Number Entry Box */
+  .car-id-box {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--orange-accent);
+    font-weight: 900;
+  }
+
+  .car-input {
+    background: #181b20;
+    border: 1px solid var(--orange-accent);
+    color: var(--orange-accent);
+    font-size: 13px;
+    font-weight: 900;
+    width: 48px;
+    border-radius: 4px;
+    padding: 2px 4px;
+    text-align: center;
+  }
+
+  .car-input:focus {
+    outline: none;
+    background: #000000;
+    box-shadow: 0 0 5px var(--orange-accent);
+  }
+
   .live-status { color: #00e676; display: flex; align-items: center; gap: 4px; }
   .battery { color: #cccccc; }
 
@@ -61,7 +88,7 @@
     flex-direction: column;
     gap: 8px;
     margin-top: 2px;
-    min-height: 0; /* Allows flex items to shrink cleanly */
+    min-height: 0;
   }
 
   /* Top telemetry row */
@@ -173,7 +200,7 @@
     overflow: hidden;
   }
 
-  /* LED Display Recessed Box with Glare */
+  /* LED Display Window */
   .led-display-window {
     width: 100%;
     background: #121418;
@@ -186,7 +213,6 @@
     overflow: hidden;
   }
 
-  /* Realistic Glass Glare Overlay */
   .led-display-window::after {
     content: '';
     position: absolute;
@@ -307,12 +333,15 @@
 </head>
 <body>
 
-  <!-- Top Status Bar -->
+  <!-- Top Status Bar with Editable Car Number Input -->
   <div class="header">
-    <div class="car-id">CAR #15</div>
+    <div class="car-id-box">
+      <span>CAR #</span>
+      <input type="text" id="car-num-input" class="car-input" value="15" maxlength="4" onchange="saveCarNumber()">
+    </div>
     <div class="clock" id="clock">--:--:--</div>
-    <div class="live-status">● LIVE</div>
-    <div class="battery">66% ⚡</div>
+    <div class="live-status" id="live-status">● LIVE</div>
+    <div class="battery" id="battery-status">100% ⚡</div>
   </div>
 
   <!-- Main Dashboard -->
@@ -333,7 +362,7 @@
         </div>
       </div>
 
-      <!-- Grouped Trips with Red LED Glare -->
+      <!-- Grouped Trips -->
       <div class="trips-card">
         <div class="trip-box">
           <div class="trip-label">STAGE TRIP</div>
@@ -345,7 +374,7 @@
         <div class="trip-box">
           <div class="trip-label">TOTAL TRIP</div>
           <div class="led-display-window">
-            <div class="trip-val-red" id="total-trip">0.06</div>
+            <div class="trip-val-red" id="total-trip">0.00</div>
           </div>
           <button class="trip-btn" onclick="resetTotalTrip()">HOLD RESET</button>
         </div>
@@ -355,7 +384,7 @@
     <!-- HQ Message Banner -->
     <div class="hq-banner">
       <div class="hq-tag">HQ MSG</div>
-      <div class="hq-text" id="hq-msg">RECCE MODE ACTIVE - MAX 30 MPH</div>
+      <div class="hq-text" id="hq-msg">CONNECTING TO HQ...</div>
     </div>
 
     <!-- Base Action Buttons -->
@@ -368,103 +397,226 @@
 
   <!-- Bottom Bar -->
   <div class="footer">
-    <div class="status-flag">MOCK SYNC: <span id="sync-status" style="color:#00e5ff;">ACTIVE</span></div>
+    <div class="status-flag">FIREBASE: <span id="sync-status" style="color:#00e5ff;">INITIALIZING</span></div>
     <div class="status-sent">Logs: <span id="log-count">0</span> | Last: <span id="last-sent">OK</span></div>
   </div>
 
-<script>
-  let currentSpeed = 0.0;
-  const speedLimit = 30.0;
-  const carId = 15;
+  <!-- Firebase Modular Scripts -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { 
+      getFirestore, 
+      collection, 
+      addDoc, 
+      doc, 
+      onSnapshot, 
+      serverTimestamp 
+    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-  // Live Clock
-  function updateClock() {
-    const now = new Date();
-    document.getElementById('clock').innerText = now.toTimeString().split(' ')[0];
-  }
-  setInterval(updateClock, 1000);
-  updateClock();
-
-  // Speed Simulator & Breach Warning
-  function setSpeed(val) {
-    currentSpeed = Math.max(0, val);
-    updateSpeedUI();
-  }
-
-  function adjustSpeed(delta) {
-    currentSpeed = Math.max(0, currentSpeed + delta);
-    updateSpeedUI();
-  }
-
-  function updateSpeedUI() {
-    document.getElementById('speed').innerText = currentSpeed.toFixed(1);
-    const speedCard = document.getElementById('speed-card');
-    
-    if (currentSpeed > speedLimit) {
-      speedCard.classList.add('speed-breach');
-    } else {
-      speedCard.classList.remove('speed-breach');
-    }
-  }
-
-  // Mock Backend API Handler
-  const MockBackend = {
-    dbKey: 'recce_telemetry_logs',
-
-    init() {
-      if (!localStorage.getItem(this.dbKey)) {
-        localStorage.setItem(this.dbKey, JSON.stringify([]));
-      }
-      this.updateLogCounter();
-    },
-
-    pushLog(payload) {
-      const logs = JSON.parse(localStorage.getItem(this.dbKey)) || [];
-      logs.push(payload);
-      localStorage.setItem(this.dbKey, JSON.stringify(logs));
-      
-      console.log("[MOCK CLOUD DB] Packet Received:", payload);
-      this.updateLogCounter();
-    },
-
-    updateLogCounter() {
-      const logs = JSON.parse(localStorage.getItem(this.dbKey)) || [];
-      document.getElementById('log-count').innerText = logs.length;
-    }
-  };
-
-  MockBackend.init();
-
-  // Automatic Periodic Sync (Every 3 seconds)
-  setInterval(() => {
-    const payload = {
-      car_id: carId,
-      timestamp: new Date().toISOString(),
-      speed_mph: currentSpeed,
-      speed_limit_mph: speedLimit,
-      speeding_breach: currentSpeed > speedLimit,
-      latitude: 52.4145,
-      longitude: -4.0812
+    // Project Firebase Configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyCLi3NMmoJJCeJFGU4oeABpQyivQe1Z6i0",
+      authDomain: "the-regulator-rally.firebaseapp.com",
+      databaseURL: "https://the-regulator-rally-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "the-regulator-rally",
+      storageBucket: "the-regulator-rally.firebasestorage.app",
+      messagingSenderId: "1026958520151",
+      appId: "1:1026958520151:web:1665550c6b9e3a8bf9d812"
     };
 
-    MockBackend.pushLog(payload);
-  }, 3000);
+    // Initialize Firebase Services
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
 
-  // Status Buttons
-  function sendStatus(type) {
-    const statusText = document.getElementById('last-sent');
-    statusText.innerText = type;
+    // Hardcoded Recce Stage & Control Coordinates (Geofences)
+    const RECCE_STAGES = [
+      { name: "Service Park Zone", lat: 52.4145, lng: -4.0812, radiusMeters: 150, limitMph: 30 },
+      { name: "SS1 Start - Clocaenog", lat: 53.0512, lng: -3.4123, radiusMeters: 100, limitMph: 30 },
+      { name: "SS1 Finish - Clocaenog", lat: 53.0821, lng: -3.4532, radiusMeters: 100, limitMph: 30 },
+      { name: "SS2 Start - Brenig", lat: 53.1105, lng: -3.5210, radiusMeters: 100, limitMph: 30 }
+    ];
 
-    MockBackend.pushLog({
-      car_id: carId,
-      timestamp: new Date().toISOString(),
-      event_type: 'STATUS_ALERT',
-      status_value: type
+    let currentSpeed = 0.0;
+    let speedLimit = 30.0;
+    let logCount = 0;
+    let currentLat = 52.4145;
+    let currentLng = -4.0812;
+    let activeZoneName = "Service Park Zone";
+    let activeBreach = false;
+
+    // Load stored Car Number
+    const carInputEl = document.getElementById("car-num-input");
+    const storedCarNum = localStorage.getItem("rally_car_num");
+    if (storedCarNum) carInputEl.value = storedCarNum;
+
+    window.saveCarNumber = function() {
+      const val = carInputEl.value.trim().toUpperCase() || '15';
+      carInputEl.value = val;
+      localStorage.setItem("rally_car_num", val);
+    };
+
+    function getCarId() {
+      return carInputEl.value.trim().toUpperCase() || '15';
+    }
+
+    // UI Elements
+    const syncStatusEl = document.getElementById("sync-status");
+    const hqMsgEl = document.getElementById("hq-msg");
+    const logCountEl = document.getElementById("log-count");
+    const lastSentEl = document.getElementById("last-sent");
+
+    // Haversine Formula for Distance Calculation (meters)
+    function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371e3;
+      const rad = Math.PI / 180;
+      const dLat = (lat2 - lat1) * rad;
+      const dLon = (lon2 - lon1) * rad;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * rad) * Math.cos(lat2 * rad) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    // Geofence Evaluator
+    function checkGeofences(lat, lng) {
+      let zoneFound = false;
+      for (const stage of RECCE_STAGES) {
+        const dist = calculateDistanceMeters(lat, lng, stage.lat, stage.lng);
+        if (dist <= stage.radiusMeters) {
+          activeZoneName = stage.name;
+          speedLimit = stage.limitMph;
+          document.getElementById('speed-limit').innerText = speedLimit;
+          zoneFound = true;
+          break;
+        }
+      }
+
+      if (!zoneFound) {
+        activeZoneName = "Liaison Route";
+        speedLimit = 60.0;
+        document.getElementById('speed-limit').innerText = speedLimit;
+      }
+      updateSpeedUI();
+    }
+
+    // Live Clock
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('clock').innerText = now.toTimeString().split(' ')[0];
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // Speed UI Handlers
+    window.setSpeed = function(val) {
+      currentSpeed = Math.max(0, val);
+      updateSpeedUI();
+    };
+
+    window.adjustSpeed = function(delta) {
+      currentSpeed = Math.max(0, currentSpeed + delta);
+      updateSpeedUI();
+    };
+
+    function updateSpeedUI() {
+      document.getElementById('speed').innerText = currentSpeed.toFixed(1);
+      const speedCard = document.getElementById('speed-card');
+      const isBreaching = currentSpeed > speedLimit;
+
+      if (isBreaching) {
+        speedCard.classList.add('speed-breach');
+        // Transmit initial breach incident to HQ
+        if (!activeBreach) {
+          activeBreach = true;
+          transmitTelemetryLog('SPEED_BREACH', 'OVER LIMIT');
+        }
+      } else {
+        speedCard.classList.remove('speed-breach');
+        activeBreach = false;
+      }
+    }
+
+    // Push Log Event to Firestore
+    async function transmitTelemetryLog(eventType = 'SPEED_BREACH', customStatus = null) {
+      try {
+        await addDoc(collection(db, "telemetry_logs"), {
+          car_id: getCarId(),
+          timestamp: serverTimestamp(),
+          speed_kph: parseFloat((currentSpeed * 1.60934).toFixed(1)),
+          speed_mph: parseFloat(currentSpeed.toFixed(1)),
+          speed_limit_mph: speedLimit,
+          speeding_breach: currentSpeed > speedLimit,
+          zone: activeZoneName,
+          event_type: eventType,
+          status_value: customStatus,
+          location: {
+            lat: currentLat,
+            lng: currentLng
+          }
+        });
+
+        logCount++;
+        logCountEl.innerText = logCount;
+        syncStatusEl.innerText = "ONLINE";
+        syncStatusEl.style.color = "#00e676";
+      } catch (e) {
+        console.error("Firestore transmission error:", e);
+        syncStatusEl.innerText = "RETRY";
+        syncStatusEl.style.color = "#ff1744";
+      }
+    }
+
+    // Status Alert Buttons
+    window.sendStatus = function(type) {
+      lastSentEl.innerText = type;
+      transmitTelemetryLog('STATUS_ALERT', type);
+    };
+
+    window.resetStageTrip = function() { document.getElementById('stage-trip').innerText = '0.00'; };
+    window.resetTotalTrip = function() { document.getElementById('total-trip').innerText = '0.00'; };
+
+    // Real-Time GPS Tracking API
+    if ("geolocation" in navigator) {
+      navigator.geolocation.watchPosition((position) => {
+        currentLat = position.coords.latitude;
+        currentLng = position.coords.longitude;
+        
+        if (position.coords.speed !== null && position.coords.speed >= 0) {
+          currentSpeed = position.coords.speed * 2.23694;
+        }
+        
+        checkGeofences(currentLat, currentLng);
+      }, (err) => {
+        console.warn("GPS tracking warning: " + err.message);
+        checkGeofences(currentLat, currentLng);
+      }, {
+        enableHighAccuracy: true,
+        maximumAge: 1000,
+        timeout: 5000
+      });
+    } else {
+      checkGeofences(currentLat, currentLng);
+    }
+
+    // Listen to HQ Messages targeted to ALL or specifically to this Car Number
+    onSnapshot(doc(db, "control_logs", "hq_broadcast"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const targetCar = String(data.target_car || 'ALL').toUpperCase();
+        const myCar = getCarId();
+        
+        if (targetCar === 'ALL' || targetCar === myCar) {
+          hqMsgEl.innerText = (data.message || "RECCE MODE ACTIVE").toUpperCase();
+        }
+      }
+    }, (error) => {
+      console.warn("HQ listener note: ", error);
+      hqMsgEl.innerText = "RECCE MODE ACTIVE";
     });
-  }
 
-  function resetStageTrip() { document.getElementById('stage-trip').innerText = '0.00'; }
-  function resetTotalTrip() { document.getElementById('total-trip').innerText = '0.00'; }
-</script>
+    syncStatusEl.innerText = "READY";
+    syncStatusEl.style.color = "#00e5ff";
+  </script>
 </body>
 </html>
